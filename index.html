@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>音読採点 — Read Aloud</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0e1626;          /* 背景（録音ブースの夜） */
+    --ink2:#16213a;         /* パネル */
+    --ink3:#1f2c49;         /* 境界・入力 */
+    --paper:#fbfaf5;        /* 本文カード */
+    --paper-ink:#1a2236;    /* 本文の文字色 */
+    --muted:#8896b4;        /* 補助テキスト（暗背景） */
+    --line:#28365a;
+    --listen:#38bdf8;       /* 聞き取り中（声） */
+    --good:#34d399;         /* 正しく読めた語 */
+    --miss:#fb7185;         /* 読み飛ばし・誤り */
+    --gold:#fbbf24;         /* 得点・星 */
+    --en:'Lexend',system-ui,sans-serif;
+    --jp:'Zen Kaku Gothic New',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font-family:var(--jp);
+    background:
+      radial-gradient(1200px 600px at 50% -10%, #1b2945 0%, transparent 60%),
+      var(--ink);
+    color:#e8edf8;
+    min-height:100vh;
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:860px;margin:0 auto;padding:28px 20px 80px}
+
+  /* ヘッダー */
+  header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:22px}
+  .logo{
+    font-family:var(--en);font-weight:700;font-size:28px;letter-spacing:-.5px;
+    display:flex;align-items:center;gap:10px;
+  }
+  .logo .ja{font-family:var(--jp);font-weight:700;color:#fff}
+  .logo .en{color:var(--listen);font-weight:600;font-size:18px;letter-spacing:.5px}
+  .tagline{color:var(--muted);font-size:13px;margin-left:auto}
+
+  .card{
+    background:linear-gradient(180deg,var(--ink2),#131d33);
+    border:1px solid var(--line);
+    border-radius:18px;
+    padding:22px;
+    box-shadow:0 18px 40px -24px #000;
+  }
+  .card + .card{margin-top:18px}
+
+  label.field{display:block;font-size:13px;color:var(--muted);margin:0 0 8px;font-weight:500}
+  textarea{
+    width:100%;min-height:130px;resize:vertical;
+    font-family:var(--en);font-size:17px;line-height:1.7;
+    color:var(--paper-ink);background:var(--paper);
+    border:1px solid var(--ink3);border-radius:12px;padding:14px 16px;
+  }
+  textarea:focus{outline:3px solid #2b6ea822;border-color:var(--listen)}
+
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:14px}
+  .seg{display:inline-flex;background:var(--ink3);border-radius:10px;padding:3px;gap:2px}
+  .seg button{
+    font-family:var(--jp);border:0;background:transparent;color:var(--muted);
+    padding:8px 14px;border-radius:8px;font-size:13px;cursor:pointer;font-weight:500;
+  }
+  .seg button[aria-pressed="true"]{background:#2c3c63;color:#fff}
+  .ghost{
+    border:1px solid var(--line);background:transparent;color:#cdd7ef;
+    font-family:var(--jp);font-size:13px;padding:9px 14px;border-radius:10px;cursor:pointer;
+  }
+  .ghost:hover{border-color:var(--listen);color:#fff}
+
+  .btn{
+    font-family:var(--jp);font-weight:700;border:0;border-radius:12px;cursor:pointer;
+    padding:13px 22px;font-size:15px;color:#06243a;
+    background:linear-gradient(180deg,#7dd3fc,var(--listen));
+    box-shadow:0 10px 24px -12px var(--listen);
+  }
+  .btn:hover{filter:brightness(1.05)}
+  .btn[disabled]{opacity:.4;cursor:not-allowed;box-shadow:none}
+
+  /* 本文カード */
+  .stage{display:none}
+  .stage.show{display:block}
+  .passage-card{
+    background:var(--paper);color:var(--paper-ink);
+    border-radius:16px;padding:26px 26px 22px;
+    box-shadow:inset 0 0 0 1px #0000000d;
+  }
+  .passage{font-family:var(--en);font-size:25px;line-height:1.95;letter-spacing:.1px;word-spacing:1px}
+  .passage .w{
+    border-radius:6px;padding:1px 2px;margin:0 1px;
+    transition:background-color .18s ease,color .18s ease;
+  }
+  .passage .w.good{background:#34d39926;color:#0c8a63;font-weight:600}
+  .passage .w.miss{background:#fb71851f;color:#c43e57;text-decoration:underline;text-decoration-color:#fb718580;text-underline-offset:3px}
+  .passage .w.next{box-shadow:inset 0 -3px 0 var(--listen)}
+  .passage .w[data-say]{cursor:pointer}
+  .passage .w[data-say]:hover{background:#38bdf826}
+  .passage .w[data-say]:focus-visible{outline:2px solid var(--listen);outline-offset:1px}
+  .passage .w.say{background:#38bdf84d;color:#0b5c86}
+  .tap-hint{font-size:12px;color:var(--muted);margin:8px 2px 0}
+
+  /* コントロールバー */
+  .controls{display:flex;align-items:center;gap:16px;margin-top:18px;flex-wrap:wrap}
+  .mic{
+    --size:74px;width:var(--size);height:var(--size);border-radius:50%;
+    border:0;cursor:pointer;position:relative;flex:0 0 auto;
+    background:radial-gradient(circle at 50% 35%,#9be3ff,var(--listen));
+    box-shadow:0 12px 30px -10px var(--listen);
+    display:grid;place-items:center;color:#063;
+  }
+  .mic svg{width:32px;height:32px}
+  .mic.live{background:radial-gradient(circle at 50% 35%,#fda4af,var(--miss));box-shadow:0 12px 30px -8px var(--miss)}
+  .mic.live::before{
+    content:"";position:absolute;inset:-6px;border-radius:50%;
+    border:3px solid var(--miss);opacity:.55;animation:ring 1.4s ease-out infinite;
+  }
+  @keyframes ring{0%{transform:scale(.9);opacity:.55}100%{transform:scale(1.45);opacity:0}}
+  .status{font-size:14px;color:var(--muted)}
+  .status b{color:#dbe6ff;font-weight:600}
+  .wave{display:flex;align-items:flex-end;gap:3px;height:26px}
+  .wave span{width:3px;background:var(--listen);border-radius:2px;height:5px}
+  .wave.live span{animation:bounce .9s ease-in-out infinite}
+  .wave span:nth-child(2){animation-delay:.1s}
+  .wave span:nth-child(3){animation-delay:.22s}
+  .wave span:nth-child(4){animation-delay:.34s}
+  .wave span:nth-child(5){animation-delay:.16s}
+  @keyframes bounce{0%,100%{height:5px}50%{height:24px}}
+
+  /* 結果 */
+  .result{display:none;margin-top:18px}
+  .result.show{display:block;animation:rise .4s ease}
+  @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .scoreboard{display:grid;grid-template-columns:auto 1fr;gap:24px;align-items:center}
+  .gauge{position:relative;width:132px;height:132px;flex:0 0 auto}
+  .gauge .num{
+    position:absolute;inset:0;display:grid;place-content:center;text-align:center;
+  }
+  .gauge .num .pct{font-family:var(--en);font-weight:700;font-size:34px;line-height:1}
+  .gauge .num .cap{font-size:11px;color:var(--muted)}
+  .stars{font-size:30px;letter-spacing:4px;color:#3a466a}
+  .stars b{color:var(--gold)}
+  .verdict{font-weight:700;font-size:19px;margin:6px 0 2px}
+  .metrics{display:flex;gap:26px;margin-top:10px;flex-wrap:wrap}
+  .metric .v{font-family:var(--en);font-weight:700;font-size:22px}
+  .metric .l{font-size:12px;color:var(--muted)}
+  .missbox{margin-top:18px;border-top:1px solid var(--line);padding-top:14px}
+  .missbox h4{margin:0 0 8px;font-size:13px;color:var(--muted);font-weight:500}
+  .chips{display:flex;flex-wrap:wrap;gap:7px}
+  .chip{font-family:var(--en);font-size:14px;background:#fb71851a;color:#fda4b3;border:1px solid #fb718540;padding:4px 11px;border-radius:20px}
+  .chips .none{font-family:var(--jp);color:var(--good)}
+  .best{font-size:12px;color:var(--muted);margin-top:10px}
+  .best b{color:var(--gold);font-family:var(--en)}
+
+  .hint{font-size:12px;color:var(--muted);margin-top:10px}
+
+  /* 提出（Googleフォーム） */
+  .submitbox{margin-top:18px;border-top:1px solid var(--line);padding-top:14px;display:none}
+  .submitbox.show{display:block}
+  .submitbox h4{margin:0 0 10px;font-size:13px;color:var(--muted);font-weight:500}
+  .submit-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .name-in{
+    font-family:var(--jp);font-size:15px;color:#fff;background:var(--ink3);
+    border:1px solid var(--line);border-radius:10px;padding:11px 14px;min-width:170px;flex:1 1 170px;
+  }
+  .name-in:focus{outline:none;border-color:var(--listen)}
+  .send{
+    font-family:var(--jp);font-weight:700;border:0;border-radius:10px;cursor:pointer;
+    padding:11px 18px;font-size:14px;color:#052e1a;background:linear-gradient(180deg,#6ee7b7,var(--good));
+  }
+  .send[disabled]{opacity:.5;cursor:default}
+  .send-status{font-size:13px;color:var(--muted)}
+  .send-status.ok{color:var(--good)}
+  .send-status.ng{color:var(--miss)}
+  .cfg-missing{font-size:12px;color:var(--muted);margin-top:8px}
+  .cfg-missing a{color:var(--listen);cursor:pointer;text-decoration:underline}
+
+  /* 先生用設定 */
+  .gear{position:fixed;right:14px;bottom:12px;font-size:12px;color:#6a789c;cursor:pointer;
+    background:#131d33e6;border:1px solid var(--line);border-radius:20px;padding:6px 13px;z-index:40}
+  .gear:hover{color:#cdd7ef;border-color:var(--listen)}
+  .panel-mask{display:none;position:fixed;inset:0;background:#05080fd0;z-index:50;
+    align-items:flex-start;justify-content:center;padding:24px 16px;overflow:auto}
+  .panel-mask.show{display:flex}
+  .panel{max-width:640px;width:100%;background:var(--ink2);border:1px solid var(--line);
+    border-radius:16px;padding:24px}
+  .panel h3{margin:0 0 6px;font-size:18px}
+  .panel p,.panel li{font-size:13px;color:#c3cde6;line-height:1.75}
+  .panel ol{margin:8px 0 14px;padding-left:20px}
+  .panel code{background:#0d1526;border:1px solid var(--line);border-radius:5px;
+    padding:1px 6px;font-family:var(--en);color:#9be3ff;font-size:12px}
+  .panel textarea{min-height:74px;font-size:13px}
+  .snippet{background:#0d1526;border:1px solid var(--line);border-radius:10px;padding:12px 14px;
+    font-family:var(--en);font-size:12px;color:#bfe9ff;white-space:pre;overflow-x:auto;margin-top:12px;display:none}
+  .snippet.show{display:block}
+  .panel-close{float:right;color:var(--muted);cursor:pointer;font-size:22px;line-height:1}
+  .panel-close:hover{color:#fff}
+  .warn{
+    display:none;background:#fb71851a;border:1px solid #fb718550;color:#ffd9df;
+    border-radius:12px;padding:14px 16px;font-size:14px;margin-bottom:18px;
+  }
+  .warn.show{display:block}
+
+  footer{text-align:center;color:#56638a;font-size:12px;margin-top:30px}
+
+  @media (max-width:560px){
+    .passage{font-size:21px}
+    .scoreboard{grid-template-columns:1fr;justify-items:center;text-align:center}
+    .tagline{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none!important;transition:none!important}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><span class="ja">音読採点</span><span class="en">Read&nbsp;Aloud</span></div>
+    <div class="tagline">お手本を聞く → 声に出して読む → 何度も挑戦</div>
+  </header>
+
+  <div id="warn" class="warn"></div>
+
+  <!-- 設定 -->
+  <section id="setup" class="card">
+    <label class="field" for="passage">英文を入力（先生が貼り付け・生徒が読む文章）</label>
+    <textarea id="passage" spellcheck="false">“I wish I could go to school.” “I wish I had pens and notebooks.” Have you ever felt this way?
+Children in some parts of the world cannot study at school. We are running a campaign to help them. Send us unused school supplies, and we will send them to children abroad. You can also donate your old school backpack. It can have a new life overseas.</textarea>
+    <div class="row" id="nameSetupRow" style="display:none">
+      <input class="name-in" id="numSetup" type="text" inputmode="numeric" placeholder="出席番号" autocomplete="off" style="flex:0 0 110px">
+      <input class="name-in" id="nameSetup" type="text" placeholder="名前（提出に使います）" autocomplete="off" style="flex:1 1 160px">
+    </div>
+    <div class="row">
+      <div class="seg" role="group" aria-label="発音の種類">
+        <button data-lang="en-US" aria-pressed="true">アメリカ英語</button>
+        <button data-lang="en-GB" aria-pressed="false">イギリス英語</button>
+      </div>
+      <button class="ghost" id="sampleBtn">サンプル文に戻す</button>
+      <button class="btn" id="startBtn" style="margin-left:auto">この文章で始める</button>
+    </div>
+  </section>
+
+  <!-- 音読ステージ -->
+  <section id="stage" class="stage card">
+    <div class="passage-card">
+      <div id="passage-view" class="passage"></div>
+    </div>
+    <p class="tap-hint">🔈 発音がわからない単語は、タップすると発音を聞けます（録音していないとき）。</p>
+
+    <div class="controls">
+      <button class="mic" id="micBtn" aria-label="録音を開始">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="22"/>
+        </svg>
+      </button>
+      <div class="wave" id="wave"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="status" id="status">マイクのボタンを押して、ゆっくりはっきり読みましょう。</div>
+      <button class="ghost" id="modelBtn" style="margin-left:auto">🔊 お手本を聞く</button>
+    </div>
+
+    <!-- 結果 -->
+    <div id="result" class="result">
+      <div class="scoreboard">
+        <div class="gauge">
+          <svg viewBox="0 0 120 120" width="132" height="132">
+            <circle cx="60" cy="60" r="52" fill="none" stroke="#2a3a5e" stroke-width="12"/>
+            <circle id="gaugeArc" cx="60" cy="60" r="52" fill="none" stroke="var(--good)" stroke-width="12"
+                    stroke-linecap="round" transform="rotate(-90 60 60)" stroke-dasharray="327" stroke-dashoffset="327"/>
+          </svg>
+          <div class="num"><div class="pct" id="pct">0%</div><div class="cap">正しく読めた</div></div>
+        </div>
+        <div>
+          <div class="stars" id="stars">☆☆☆</div>
+          <div class="verdict" id="verdict"></div>
+          <div class="metrics">
+            <div class="metric"><div class="v" id="mWords">0/0</div><div class="l">語</div></div>
+            <div class="metric"><div class="v" id="mWpm">0</div><div class="l">音読スピード（語/分）</div></div>
+            <div class="metric"><div class="v" id="mTime">0.0s</div><div class="l">読んだ時間</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="missbox">
+        <h4>もう一度ねらいたい語</h4>
+        <div class="chips" id="missChips"></div>
+      </div>
+
+      <div class="best" id="bestLine"></div>
+
+      <div class="submitbox" id="submitbox">
+        <h4>先生に提出</h4>
+        <div class="submit-row">
+          <input class="name-in" id="numIn" type="text" inputmode="numeric" placeholder="出席番号" autocomplete="off" style="flex:0 0 100px;min-width:80px">
+          <input class="name-in" id="nameIn" type="text" placeholder="名前（例：小川原）" autocomplete="off">
+          <button class="send" id="sendBtn">📤 先生に提出</button>
+          <span class="send-status" id="sendStatus"></span>
+        </div>
+        <div class="cfg-missing" id="cfgMissing">まだ提出先が未設定です。<a id="openPanelInline">先生用設定</a>から連携できます。</div>
+      </div>
+
+      <div class="row">
+        <button class="btn" id="retryBtn">もう一度読む</button>
+        <button class="ghost" id="changeBtn">文章を変える</button>
+      </div>
+    </div>
+
+    <p class="hint">※ Google Chrome で動きます。最初にマイクの使用を「許可」してください。声はこの画面の中だけで処理され、どこにも送信・保存されません。</p>
+  </section>
+
+  <footer>音読採点 — Web Speech API / APIキー不要・自己完結HTML</footer>
+</div>
+
+<!-- 先生用設定（生徒には基本触らせない） -->
+<div class="gear" id="gearBtn">⚙ 先生用設定</div>
+<div class="panel-mask" id="panelMask">
+  <div class="panel">
+    <span class="panel-close" id="panelClose">×</span>
+    <h3>Googleフォーム連携（先生用）</h3>
+    <p>結果を先生のスプレッドシートに集める、一度きりの設定です。回答日時はフォーム側で自動記録されます。</p>
+    <ol>
+      <li>Googleフォームを新規作成し、「記述式」の質問をこの順で6つ作る：<b>氏名 / 出席番号 / 正答率 / 語数 / スピード / 文章</b></li>
+      <li>右上の <code>⋮</code> →「事前入力したリンクを取得」を開く</li>
+      <li>各欄にこの合言葉をそのまま入力：氏名=<code>name</code>／出席番号=<code>number</code>／正答率=<code>pct</code>／語数=<code>words</code>／スピード=<code>wpm</code>／文章=<code>title</code></li>
+      <li>「リンクを取得」で出たURLを下に貼り付けて「読み込む」</li>
+      <li>回答先スプレッドシートは、フォーム編集画面の「回答」タブから作成できます</li>
+    </ol>
+    <label class="field" for="prefillIn">事前入力リンクを貼り付け</label>
+    <textarea id="prefillIn" spellcheck="false" placeholder="https://docs.google.com/forms/d/e/xxxx/viewform?usp=pp_url&entry.111=name&entry.222=pct&..."></textarea>
+    <div class="row">
+      <button class="send" id="parseBtn">読み込む</button>
+      <span class="send-status" id="parseStatus"></span>
+    </div>
+    <div class="snippet" id="snippet"></div>
+    <label style="display:flex;align-items:center;gap:9px;margin-top:16px;font-size:13px;color:#c3cde6;cursor:pointer">
+      <input type="checkbox" id="autoSendChk" checked> 結果が出たら自動で先生に提出する
+    </label>
+    <p style="margin-top:14px">この設定はお使いの端末に保存されます。<b>生徒全員の端末で使う</b>場合は、上に出るコード（<code>TEACHER_CONFIG</code>）をHTMLに貼り付けて配信するか、事前入力リンクを渡してファイルに組み込んでもらってください。</p>
+  </div>
+</div>
+<iframe name="gform_sink" style="display:none" title="submit-sink"></iframe>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- 要素 ----------
+  const $ = s => document.querySelector(s);
+  const passageInput = $('#passage');
+  const setupCard = $('#setup');
+  const stage = $('#stage');
+  const view = $('#passage-view');
+  const micBtn = $('#micBtn');
+  const wave = $('#wave');
+  const statusEl = $('#status');
+  const resultBox = $('#result');
+  const warn = $('#warn');
+
+  let lang = 'en-US';
+  let tokens = [];          // {raw, norm, el, sIndex|null}
+  let scoringNorms = [];    // 採点対象語（正規化済み）
+  let recognition = null;
+  let listening = false;
+  let finalTranscript = '';
+  let startTime = 0;
+  let best = null;          // セッション内ベスト（%）
+  let lastResult = {pct:0, words:'0/0', wpm:0};  // 直近の採点結果（提出用）
+
+  // ---------- ユーティリティ ----------
+  function norm(w){ return w.toLowerCase().replace(/[^a-z0-9']/g,'').replace(/'/g,''); }
+
+  function lev(a,b){
+    const m=a.length,n=b.length;
+    if(Math.abs(m-n)>2) return 99;
+    const d=Array.from({length:m+1},(_,i)=>[i].concat(Array(n).fill(0)));
+    for(let j=0;j<=n;j++) d[0][j]=j;
+    for(let i=1;i<=m;i++)for(let j=1;j<=n;j++)
+      d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
+    return d[m][n];
+  }
+  function wmatch(t,s){ if(t===s) return true; return (t.length>=4 && lev(t,s)<=1); }
+
+  // 認識語列を本文の採点語に対応づけ、一致したインデックス集合を返す（LCSアライン）
+  function align(target, spoken){
+    const n=target.length, m=spoken.length;
+    if(n===0||m===0) return new Set();
+    const dp=Array.from({length:n+1},()=>new Int32Array(m+1));
+    for(let i=n-1;i>=0;i--)for(let j=m-1;j>=0;j--){
+      dp[i][j]= wmatch(target[i],spoken[j]) ? dp[i+1][j+1]+1 : Math.max(dp[i+1][j],dp[i][j+1]);
+    }
+    const set=new Set(); let i=0,j=0;
+    while(i<n&&j<m){
+      if(wmatch(target[i],spoken[j])){ set.add(i); i++; j++; }
+      else if(dp[i+1][j]>=dp[i][j+1]) i++; else j++;
+    }
+    return set;
+  }
+
+  // ---------- 本文の組み立て ----------
+  function buildPassage(text){
+    view.innerHTML='';
+    tokens=[]; scoringNorms=[];
+    const parts = text.split(/(\s+)/); // 空白も保持して見た目を維持
+    let s=0;
+    parts.forEach(p=>{
+      if(/^\s+$/.test(p)){ view.appendChild(document.createTextNode(p)); return; }
+      if(p===''){ return; }
+      const nrm = norm(p);
+      const span=document.createElement('span');
+      span.className='w'; span.textContent=p;
+      view.appendChild(span);
+      const t={raw:p, norm:nrm, el:span, sIndex:null};
+      if(nrm!==''){
+        t.sIndex=s; scoringNorms.push(nrm); s++;
+        span.dataset.say='1'; span.tabIndex=0; span.setAttribute('role','button');
+        span.title='タップで発音を聞く';
+        span.addEventListener('click',()=>sayWord(span));
+        span.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); sayWord(span); } });
+      }
+      tokens.push(t);
+    });
+  }
+
+  function paint(matchedSet, finished){
+    let nextMarked=false;
+    tokens.forEach(t=>{
+      if(t.sIndex===null) return;
+      t.el.classList.remove('good','miss','next');
+      if(matchedSet.has(t.sIndex)){
+        t.el.classList.add('good');
+      } else if(finished){
+        t.el.classList.add('miss');
+      } else if(!nextMarked){
+        t.el.classList.add('next'); nextMarked=true; // 次に読む語の目印
+      }
+    });
+  }
+
+  // ---------- 音声認識 ----------
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  function ensureRecognition(){
+    if(!SR){
+      warn.textContent='このブラウザは音声認識に対応していません。Google Chrome（またはMicrosoft Edge）でお使いください。';
+      warn.classList.add('show');
+      return false;
+    }
+    return true;
+  }
+
+  function startListening(){
+    if(!ensureRecognition()) return;
+    stopModel();              // お手本が鳴っていたら止める
+    finalTranscript='';
+    recognition = new SR();
+    recognition.lang = lang;
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    recognition.onresult = e=>{
+      let interim='';
+      for(let i=e.resultIndex;i<e.results.length;i++){
+        const r=e.results[i];
+        if(r.isFinal) finalTranscript += ' '+r[0].transcript;
+        else interim += ' '+r[0].transcript;
+      }
+      const spoken = normTokenize(finalTranscript+' '+interim);
+      const matched = align(scoringNorms, spoken);
+      paint(matched, false);
+      const done = matched.size, total = scoringNorms.length;
+      statusEl.innerHTML = '聞き取り中… <b>'+done+'/'+total+'</b> 語';
+    };
+    recognition.onerror = e=>{
+      if(e.error==='not-allowed' || e.error==='service-not-allowed'){
+        warn.textContent='マイクが使えません。ブラウザのマイク許可を「許可」に変更して、もう一度お試しください。';
+        warn.classList.add('show');
+        stopListening(false);
+      }
+    };
+    recognition.onend = ()=>{ if(listening){ try{ recognition.start(); }catch(_){} } };
+
+    try{ recognition.start(); }
+    catch(_){ /* 連続start対策 */ }
+
+    listening=true; startTime=performance.now();
+    micBtn.classList.add('live'); micBtn.setAttribute('aria-label','録音を停止');
+    wave.classList.add('live');
+    resultBox.classList.remove('show');
+    statusEl.innerHTML='聞き取り中… ゆっくりはっきり読みましょう。';
+  }
+
+  // 文字列 → 正規化済み語配列
+  function norm_tokenize(str){
+    return str.trim().split(/\s+/).map(norm).filter(x=>x);
+  }
+  // 上の onresult 内のタイプミス回避用に別名を用意
+  const normTokenize = norm_tokenize;
+
+  function stopListening(score){
+    listening=false;
+    micBtn.classList.remove('live'); micBtn.setAttribute('aria-label','録音を開始');
+    wave.classList.remove('live');
+    if(recognition){ try{ recognition.stop(); }catch(_){} recognition=null; }
+    if(score) finalize();
+    else statusEl.textContent='マイクのボタンを押して、もう一度読みましょう。';
+  }
+
+  // ---------- 採点 ----------
+  function finalize(){
+    const elapsed = Math.max(0.1,(performance.now()-startTime)/1000);
+    const spoken = normTokenize(finalTranscript);
+    const matched = align(scoringNorms, spoken);
+    paint(matched, true);
+
+    const correct = matched.size, total = scoringNorms.length;
+    const pct = total ? Math.round(correct/total*100) : 0;
+    const wpm = Math.round(correct/(elapsed/60));
+
+    // ゲージ
+    const r=52, circ=2*Math.PI*r;
+    const arc=$('#gaugeArc');
+    arc.style.strokeDasharray=circ.toFixed(0);
+    arc.style.strokeDashoffset=(circ*(1-pct/100)).toFixed(1);
+    arc.style.stroke = pct>=80?'var(--good)':pct>=60?'var(--gold)':'var(--miss)';
+    $('#pct').textContent=pct+'%';
+
+    // 星と評価
+    let stars=0, verdict='';
+    if(pct>=95){stars=3;verdict='すばらしい！すらすら読めています。';}
+    else if(pct>=80){stars=2;verdict='よく読めました。あと少しで満点。';}
+    else if(pct>=60){stars=1;verdict='いいスタート。もう一度読んでみよう。';}
+    else {stars=0;verdict='まずはお手本を聞いてから、もう一度。';}
+    $('#stars').innerHTML = '<b>'+'★'.repeat(stars)+'</b>'+'☆'.repeat(3-stars);
+    $('#verdict').textContent=verdict;
+
+    $('#mWords').textContent=correct+'/'+total;
+    $('#mWpm').textContent=wpm;
+    $('#mTime').textContent=elapsed.toFixed(1)+'s';
+
+    // 読み飛ばし・誤りの語
+    const missChips=$('#missChips'); missChips.innerHTML='';
+    const missed = tokens.filter(t=>t.sIndex!==null && !matched.has(t.sIndex));
+    if(missed.length===0){
+      const s=document.createElement('span'); s.className='none'; s.textContent='全部読めました！';
+      missChips.appendChild(s);
+    } else {
+      const seen=new Set();
+      missed.forEach(t=>{
+        const key=t.norm; if(seen.has(key))return; seen.add(key);
+        const c=document.createElement('span'); c.className='chip'; c.textContent=t.raw.replace(/[^A-Za-z0-9'.,!?]/g,'');
+        missChips.appendChild(c);
+      });
+    }
+
+    // ベスト更新
+    if(best===null || pct>best) best=pct;
+    $('#bestLine').innerHTML='今日のベスト：<b>'+best+'%</b>　— 繰り返すほど上がります。';
+
+    lastResult = { pct: pct, words: correct+'/'+total, wpm: wpm };
+    refreshSubmitUI();
+    if(getConfig() && autoSendOn()) doSubmit(true);   // 名前があれば自動で提出
+
+    statusEl.innerHTML='読み終わりました。<b>'+pct+'%</b>';
+    resultBox.classList.add('show');
+  }
+
+  // ---------- お手本（読み上げ） ----------
+  // 声リストは非同期で読み込まれ、初回は空のことがある。確実に揃ってから実行する。
+  function withVoices(cb){
+    if(!('speechSynthesis' in window)) return;
+    if(speechSynthesis.getVoices().length){ cb(); return; }
+    let done=false;
+    const fire=()=>{ if(done)return; done=true; speechSynthesis.removeEventListener('voiceschanged',fire); cb(); };
+    speechSynthesis.addEventListener('voiceschanged',fire);
+    setTimeout(fire,800); // 念のためのフォールバック
+  }
+
+  // 自然な英語音声を優先して選ぶ（Google系 → Microsoft Natural → その他）
+  function pickVoice(targetLang){
+    const list=speechSynthesis.getVoices();
+    if(!list.length) return null;
+    const lc=s=>(s||'').toLowerCase().replace('_','-');
+    const base=targetLang.slice(0,2);
+    const en=list.filter(v=>lc(v.lang).indexOf(base)===0); // 英語の声に限定
+    const pool=en.length?en:list;
+    const score=v=>{
+      const n=(v.name||'').toLowerCase(); let s=0;
+      if(lc(v.lang)===lc(targetLang)) s+=4;                 // 言語が完全一致
+      if(n.includes('google')) s+=6;                        // Googleの自然音声
+      if(n.includes('natural')) s+=5;                       // Microsoft Natural
+      if(/aria|jenny|guy|ryan|sonia|libby|michelle/.test(n)) s+=2;
+      if(n.includes('online')) s+=2;
+      if(!v.localService) s+=1;
+      return s;
+    };
+    return pool.slice().sort((a,b)=>score(b)-score(a))[0];
+  }
+
+  // 単語をタップしたときの発音（録音中は誤認識を防ぐため鳴らさない）
+  function sayWord(el){
+    if(!('speechSynthesis' in window)) return;
+    if(listening){ statusEl.textContent='録音中は発音を聞けません。マイクを止めてからタップしてね。'; return; }
+    const word=(el.textContent||'').replace(/[‘’]/g,"'").replace(/[^A-Za-z0-9'\-]/g,'').replace(/^[-']+|[-']+$/g,'');
+    if(!word) return;
+    stopModel();
+    el.classList.remove('say'); void el.offsetWidth; el.classList.add('say');
+    setTimeout(()=>el.classList.remove('say'),800);
+    withVoices(()=>{
+      speechSynthesis.cancel();
+      setTimeout(()=>{   // cancel直後のspeakが無視されるChromeの癖を避ける
+        const u=new SpeechSynthesisUtterance(word);
+        u.lang=lang; u.rate=0.8; u.pitch=1;
+        const v=pickVoice(lang); if(v) u.voice=v;
+        speechSynthesis.speak(u);
+      },60);
+    });
+  }
+
+  let speaking=false;
+  function setModelLabel(on){ const b=$('#modelBtn'); if(b) b.textContent = on ? '⏹ 停止' : '🔊 お手本を聞く'; }
+  function stopModel(){ if('speechSynthesis' in window) speechSynthesis.cancel(); speaking=false; setModelLabel(false); }
+
+  function speakModel(){
+    if(!('speechSynthesis' in window)) return;
+    if(speaking){ stopModel(); return; }          // 読み上げ中なら停止
+    const text=(passageInput.value || view.textContent).trim();
+    if(!text) return;
+    withVoices(()=>{
+      speechSynthesis.cancel();
+      const voice=pickVoice(lang);
+      // 長文はChromeで崩れる/途切れるため、文ごとに分割して順番に読ませる
+      const chunks=text.match(/\s*[^.!?\n]+[.!?]*/g) || [text];
+      speaking=true; setModelLabel(true);
+      let i=0;
+      const next=()=>{
+        if(!speaking || i>=chunks.length){ stopModel(); return; }
+        const part=chunks[i].trim();
+        if(!part){ i++; next(); return; }
+        const u=new SpeechSynthesisUtterance(part);
+        u.lang=lang; u.rate=0.9; u.pitch=1;
+        if(voice) u.voice=voice;
+        u.onend=()=>{ i++; next(); };
+        u.onerror=()=>{ i++; next(); };
+        speechSynthesis.speak(u);
+      };
+      next();
+    });
+  }
+
+  // ---------- 画面遷移 ----------
+  function enterStage(){
+    const text=passageInput.value.trim();
+    if(!text){ passageInput.focus(); return; }
+    buildPassage(text);
+    setupCard.style.display='none';
+    stage.classList.add('show');
+    resultBox.classList.remove('show');
+    statusEl.textContent='マイクのボタンを押して、ゆっくりはっきり読みましょう。';
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+  function backToSetup(){
+    if(listening) stopListening(false);
+    stage.classList.remove('show');
+    setupCard.style.display='';
+    passageInput.focus();
+  }
+
+  // ---------- Googleフォーム提出 ----------
+  // 「音読送信フォーム」設定済み。生徒は設定不要で、採点後に自動で提出されます。
+  const TEACHER_CONFIG = {
+    formId:    "1FAIpQLScZv68CVLuXfLUMhuqVgmSun4XjDSfO3KHnDzwhQKmqRXLA-g",
+    entryName: "entry.366340186",    // 氏名
+    entryNumber:"entry.970181493",   // 出席番号
+    entryPct:  "entry.882543869",    // 正答率
+    entryWords:"entry.2102114022",   // 語数
+    entryWpm:  "entry.1833439896",   // スピード
+    entryTitle:"entry.1396615824"    // 文章
+  };
+
+  function store(k,v){ try{ localStorage.setItem(k,v); }catch(_){} }
+  function load(k){ try{ return localStorage.getItem(k); }catch(_){ return null; } }
+
+  function getConfig(){
+    // formId と氏名欄IDの両方が揃って初めて有効（空のまま送信して空欄行が出るのを防ぐ）
+    if(TEACHER_CONFIG.formId && TEACHER_CONFIG.entryName) return TEACHER_CONFIG;
+    const raw = load('ondoku_gform');
+    if(raw){ try{ const c=JSON.parse(raw); if(c && c.formId && c.entryName) return c; }catch(_){} }
+    return null;
+  }
+
+  // 事前入力リンクを解析して設定オブジェクトを作る（合言葉優先・無ければ出現順で補完）
+  function parsePrefill(url){
+    const idm = url.match(/\/forms\/d\/e\/([^/]+)\//);
+    if(!idm) return null;
+    const cfg = {formId:idm[1], entryName:"", entryNumber:"", entryPct:"", entryWords:"", entryWpm:"", entryTitle:""};
+    const keyMap = {name:'entryName', number:'entryNumber', pct:'entryPct', words:'entryWords', wpm:'entryWpm', title:'entryTitle'};
+    const order = ['entryName','entryNumber','entryPct','entryWords','entryWpm','entryTitle'];
+    const found = [];
+    const re = /entry\.(\d+)=([^&]*)/g; let m;
+    while((m = re.exec(url))){
+      const id = 'entry.'+m[1];
+      const val = decodeURIComponent(m[2].replace(/\+/g,' ')).toLowerCase().replace(/[^a-z]/g,'');
+      found.push(id);
+      for(const k in keyMap){ if(val===k || val.indexOf(k)===0){ cfg[keyMap[k]] = id; } }
+    }
+    // 合言葉が付いていない欄は、出てきた順に未割り当てのキーへ
+    let oi = 0;
+    found.forEach(id=>{
+      if(Object.values(cfg).indexOf(id) >= 0) return;
+      while(oi<order.length && cfg[order[oi]]) oi++;
+      if(oi<order.length){ cfg[order[oi]] = id; oi++; }
+    });
+    return found.length ? cfg : null;
+  }
+
+  function currentTitle(){
+    const w = (passageInput.value||'').trim().split(/\s+/).filter(Boolean);
+    return w.slice(0,5).join(' ') + (w.length>5 ? '…' : '');
+  }
+
+  // 名前（開始画面・結果画面・保存を同期）
+  function getName(){
+    const a=$('#nameIn'), b=$('#nameSetup');
+    return (((a&&a.value)||(b&&b.value)||load('ondoku_name')||'')).trim();
+  }
+  function setName(v){
+    v=(v||'').trim(); store('ondoku_name',v);
+    const a=$('#nameIn'), b=$('#nameSetup');
+    if(a && a.value!==v) a.value=v;
+    if(b && b.value!==v) b.value=v;
+  }
+  // 出席番号（開始画面・結果画面・保存を同期）
+  function getNum(){
+    const a=$('#numIn'), b=$('#numSetup');
+    return (((a&&a.value)||(b&&b.value)||load('ondoku_num')||'')).trim();
+  }
+  function setNum(v){
+    v=(v||'').trim(); store('ondoku_num',v);
+    const a=$('#numIn'), b=$('#numSetup');
+    if(a && a.value!==v) a.value=v;
+    if(b && b.value!==v) b.value=v;
+  }
+  function autoSendOn(){ return load('ondoku_autosend')!=='0'; }
+
+  // 送信本体（auto=true のときは静かに、名前が無ければ何もしない）
+  function doSubmit(auto){
+    const cfg=getConfig(); if(!cfg) return false;
+    const status=$('#sendStatus'), btn=$('#sendBtn');
+    const name=getName();
+    if(!name){
+      if(!auto){ const n=$('#nameIn'); if(n)n.focus(); if(status){status.className='send-status ng'; status.textContent='名前を入れてね';} }
+      return false;
+    }
+    setName(name);
+    const data={};
+    data[cfg.entryName]  = name;
+    if(cfg.entryNumber) data[cfg.entryNumber] = getNum();
+    data[cfg.entryPct]   = lastResult.pct+'%';
+    data[cfg.entryWords] = lastResult.words;
+    data[cfg.entryWpm]   = lastResult.wpm;
+    data[cfg.entryTitle] = currentTitle();
+    const form=document.createElement('form');
+    form.action='https://docs.google.com/forms/d/e/'+cfg.formId+'/formResponse';
+    form.method='POST'; form.target='gform_sink';
+    Object.keys(data).forEach(nm=>{
+      if(!nm) return;
+      const i=document.createElement('input'); i.type='hidden'; i.name=nm; i.value=data[nm]; form.appendChild(i);
+    });
+    document.body.appendChild(form); form.submit();
+    setTimeout(()=>form.remove(),1500);
+    if(status){ status.className='send-status ok'; status.textContent = auto ? '自動で提出しました ✓' : '提出しました ✓'; }
+    if(btn){ btn.disabled=true; setTimeout(()=>{ btn.disabled=false; },1500); }
+    return true;
+  }
+
+  function refreshSubmitUI(){
+    const box=$('#submitbox'); box.classList.add('show');
+    const cfg=getConfig(), name=getName(), btn=$('#sendBtn'), hint=$('#cfgMissing');
+    $('#sendStatus').textContent='';
+    if(name && $('#nameIn')) $('#nameIn').value=name;
+    const num=getNum(); if(num && $('#numIn')) $('#numIn').value=num;
+    if(!cfg){
+      btn.style.display='none';
+      hint.innerHTML='まだ提出先が未設定です。<a id="openPanelInline">先生用設定</a>から連携できます。';
+      return;
+    }
+    btn.style.display='';
+    if(autoSendOn()){
+      btn.textContent='もう一度送る';
+      hint.textContent = name ? '結果は自動で先生に提出されます。' : '名前を入れると自動で提出されます。';
+    } else {
+      btn.textContent='📤 先生に提出';
+      hint.textContent='「提出」を押すと先生に送られます。';
+    }
+  }
+
+  // ---------- イベント ----------
+  document.querySelectorAll('.seg button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      document.querySelectorAll('.seg button').forEach(x=>x.setAttribute('aria-pressed','false'));
+      b.setAttribute('aria-pressed','true');
+      lang=b.dataset.lang;
+    });
+  });
+  $('#sampleBtn').addEventListener('click',()=>{
+    passageInput.value='“I wish I could go to school.” “I wish I had pens and notebooks.” Have you ever felt this way?\nChildren in some parts of the world cannot study at school. We are running a campaign to help them. Send us unused school supplies, and we will send them to children abroad. You can also donate your old school backpack. It can have a new life overseas.';
+  });
+  $('#startBtn').addEventListener('click',enterStage);
+  $('#changeBtn').addEventListener('click',backToSetup);
+  $('#retryBtn').addEventListener('click',()=>{
+    resultBox.classList.remove('show');
+    paint(new Set(),false);
+    startListening();
+  });
+  micBtn.addEventListener('click',()=>{ listening ? stopListening(true) : startListening(); });
+  $('#modelBtn').addEventListener('click',speakModel);
+
+  // 提出
+  $('#sendBtn').addEventListener('click',()=>doSubmit(false));
+  $('#nameIn').addEventListener('input',e=>setName(e.target.value));
+  $('#nameIn').addEventListener('keydown',e=>{ if(e.key==='Enter') doSubmit(false); });
+  $('#numIn').addEventListener('input',e=>setNum(e.target.value));
+  const nameSetup=$('#nameSetup');
+  if(nameSetup) nameSetup.addEventListener('input',e=>setName(e.target.value));
+  const numSetup=$('#numSetup');
+  if(numSetup) numSetup.addEventListener('input',e=>setNum(e.target.value));
+
+  // 開始画面の名前欄は、提出先が設定済みのときだけ見せる
+  function syncSetupName(){
+    const row=$('#nameSetupRow');
+    if(row) row.style.display = getConfig() ? '' : 'none';
+    const saved=load('ondoku_name');
+    if(saved) setName(saved);
+    const savedNum=load('ondoku_num');
+    if(savedNum) setNum(savedNum);
+  }
+
+  // 先生用設定パネル
+  const mask=$('#panelMask');
+  const openPanel=()=>{ mask.classList.add('show'); };
+  $('#gearBtn').addEventListener('click',openPanel);
+  $('#panelClose').addEventListener('click',()=>mask.classList.remove('show'));
+  mask.addEventListener('click',e=>{ if(e.target===mask) mask.classList.remove('show'); });
+  document.addEventListener('click',e=>{ if(e.target && e.target.id==='openPanelInline') openPanel(); });
+
+  const autoChk=$('#autoSendChk');
+  if(autoChk){
+    autoChk.checked = autoSendOn();
+    autoChk.addEventListener('change',()=>{ store('ondoku_autosend', autoChk.checked?'1':'0'); if($('#submitbox').classList.contains('show')) refreshSubmitUI(); });
+  }
+
+  $('#parseBtn').addEventListener('click',()=>{
+    const url=$('#prefillIn').value.trim();
+    const st=$('#parseStatus'), snip=$('#snippet');
+    const cfg=parsePrefill(url);
+    if(!cfg || !cfg.formId){ st.className='send-status ng'; st.textContent='リンクを読み取れませんでした'; snip.classList.remove('show'); return; }
+    store('ondoku_gform', JSON.stringify(cfg));
+    st.className='send-status ok'; st.textContent='読み込みOK（この端末に保存しました）';
+    snip.textContent =
+      'const TEACHER_CONFIG = {\n'+
+      '  formId:    "'+cfg.formId+'",\n'+
+      '  entryName: "'+cfg.entryName+'",\n'+
+      '  entryNumber:"'+cfg.entryNumber+'",\n'+
+      '  entryPct:  "'+cfg.entryPct+'",\n'+
+      '  entryWords:"'+cfg.entryWords+'",\n'+
+      '  entryWpm:  "'+cfg.entryWpm+'",\n'+
+      '  entryTitle:"'+cfg.entryTitle+'"\n'+
+      '};';
+    snip.classList.add('show');
+    syncSetupName();
+    if($('#submitbox').classList.contains('show')) refreshSubmitUI();
+  });
+
+  if(SR===undefined) ensureRecognition();
+  syncSetupName();   // 提出先が設定済みなら開始画面に名前欄を出す
+  // お手本の声を事前に読み込んでおく（初回クリックで空にならないように）
+  if('speechSynthesis' in window){ speechSynthesis.getVoices(); speechSynthesis.addEventListener('voiceschanged',()=>speechSynthesis.getVoices()); }
+})();
+</script>
+</body>
+</html>
